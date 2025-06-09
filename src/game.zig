@@ -99,7 +99,7 @@ pub const DummyPlayer = struct {
         const self: *Self = @ptrCast(@alignCast(ctx));
         _ = self;
         print("State is {}\n", .{state});
-        return Action {.dx = 0, .dy = 0, .dz = 0 };
+        return Action{ .dx = 0, .dy = 0, .dz = 0 };
     }
 
     pub fn other_player_action(ctx: *anyopaque, action: Action) void {
@@ -114,9 +114,7 @@ pub const DummyPlayer = struct {
         _ = self;
 
         print("Reward is {}\n", .{value});
-
     }
-
 
     pub fn player(self: *Self) Player {
         return Player{
