@@ -5,8 +5,13 @@ const DummyPlayer = game.DummyPlayer;
 const Position = game.Position;
 const print = std.debug.print;
 
+
 pub fn main() !void {
-    const env = Environnement.init(1);
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const env = Environnement.init(allocator, 0);
 
     var dummy_player = DummyPlayer{
         .position1 = undefined,

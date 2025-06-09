@@ -1,11 +1,8 @@
 const std = @import("std");
 const print = std.debug.print;
+const Allocator = std.mem.Allocator;
 
 pub const Environnement = struct {
-    const Self = @This();
-
-    const LENGTH = 10;
-    board: [LENGTH][LENGTH][LENGTH]u32,
     // player one
     // player two
     // player {
@@ -39,9 +36,26 @@ pub const Environnement = struct {
     //   set_player2(Player)
     //   undo_move()
     // }
-    pub fn init(default: u32) Self {
+    const Self = @This();
+    const LENGTH = 10;
+    const TargetsMap = std.AutoHashMap(Position, i32);
+    board: [LENGTH][LENGTH][LENGTH]u32,
+    targets: TargetsMap,
+    nb_rewards: u32,
+    player1: Player,
+    player2: Player,
+    reward_player1: i32,
+    reward_player2: i32,
+
+    pub fn init(allocator: Allocator, default: u32,) Self {
         var env = Self{
             .board = undefined,
+            .targets = TargetsMap.init(allocator),
+            .player1 = undefined,
+            .player2 = undefined,
+            .reward_player1 = 0,
+            .reward_player2 = 0,
+            .nb_rewards = undefined,
         };
 
         for (0..LENGTH) |i| {
@@ -52,6 +66,18 @@ pub const Environnement = struct {
             }
         }
         return env;
+    }
+
+    pub fn setPlayer1(self: *Self, player: Player) void {
+        self.player1 = player;
+    }
+
+    pub fn setPlayer2(self: *Self, player: Player) void {
+        self.player2 = player;
+    }
+
+    pub fn play() void {
+        unreachable;
     }
 };
 
