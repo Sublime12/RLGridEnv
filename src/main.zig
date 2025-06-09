@@ -1,19 +1,25 @@
 const std = @import("std");
+const game = @import("game.zig");
+const Environnement = game.Environnement;
+const DummyPlayer = game.DummyPlayer;
+const Position = game.Position;
+const print = std.debug.print;
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    const env = Environnement.init(1);
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    var dummy_player = DummyPlayer{
+        .position1 = undefined,
+        .position2 = undefined,
+    };
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    const pos1 = Position{ .x = 1, .y = 2, .z = 3 };
+    const pos2 = Position{ .x = 9, .y = 8, .z = 7 };
+    const player = dummy_player.player();
 
-    try bw.flush(); // don't forget to flush!
+    player.begin(pos1, pos2);
+    print("Env: {}\n", .{env});
+    print("Dummy Player: {}\n", .{dummy_player});
 }
 
 test "simple test" {
