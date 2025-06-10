@@ -3,33 +3,30 @@ const game = @import("game.zig");
 const Environnement = game.Environnement;
 const DummyPlayer = game.DummyPlayer;
 const Position = game.Position;
+
+const assert = std.debug.assert;
 const print = std.debug.print;
 
+pub fn main() !void {}
 
-pub fn main() !void {
+test "initialize game" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
+    var prng = std.rand.DefaultPrng.init(0);
+    const rand = prng.random();
 
-    const env = Environnement.init(allocator, 0);
+    var dummy_player1 = DummyPlayer.init(rand);
+    var dummy_player2 = DummyPlayer.init(rand);
 
-    var dummy_player = DummyPlayer{
-        .position1 = undefined,
-        .position2 = undefined,
-    };
+    const player1 = dummy_player1.player();
+    const player2 = dummy_player2.player();
 
-    const pos1 = Position{ .x = 1, .y = 2, .z = 3 };
-    const pos2 = Position{ .x = 9, .y = 8, .z = 7 };
-    const player = dummy_player.player();
+    var env = Environnement.init(allocator, rand, 0);
+    env.setPlayer1(player1);
+    env.setPlayer2(player2);
+    env.start();
 
-    player.begin(pos1, pos2);
-    print("Env: {}\n", .{env});
-    print("Dummy Player: {}\n", .{dummy_player});
-}
-
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+    assert(env.position_p1.?.equals(&Position.create(2, 7, 9)));
+    assert(env.position_p2.?.equals(&Position.create(2, 6, 3)));
 }

@@ -1,6 +1,9 @@
 const std = @import("std");
 const print = std.debug.print;
 const Allocator = std.mem.Allocator;
+const Random = std.Random;
+const math = std.math;
+const assert = std.debug.assert;
 
 pub const Environnement = struct {
     // player one
@@ -41,21 +44,34 @@ pub const Environnement = struct {
     const TargetsMap = std.AutoHashMap(Position, i32);
     board: [LENGTH][LENGTH][LENGTH]u32,
     targets: TargetsMap,
-    nb_rewards: u32,
-    player1: Player,
-    player2: Player,
+    nb_rewards: ?u32,
+    player1: ?Player,
+    player2: ?Player,
+    position_p1: ?Position,
+    position_p2: ?Position,
     reward_player1: i32,
     reward_player2: i32,
+    started: bool,
 
-    pub fn init(allocator: Allocator, default: u32,) Self {
+    rand: Random,
+
+    pub fn init(
+        allocator: Allocator,
+        rand: Random,
+        default: u32,
+    ) Self {
         var env = Self{
             .board = undefined,
             .targets = TargetsMap.init(allocator),
-            .player1 = undefined,
-            .player2 = undefined,
+            .player1 = null,
+            .player2 = null,
+            .position_p1 = null,
+            .position_p2 = null,
             .reward_player1 = 0,
             .reward_player2 = 0,
-            .nb_rewards = undefined,
+            .nb_rewards = null,
+            .started = false,
+            .rand = rand,
         };
 
         for (0..LENGTH) |i| {
@@ -76,8 +92,37 @@ pub const Environnement = struct {
         self.player2 = player;
     }
 
-    pub fn play() void {
-        unreachable;
+    pub fn start(self: *Environnement) void {
+        assert(self.player1 != null);
+        assert(self.player2 != null);
+
+        // initialize position players 1 and 2
+
+        const x1 = self.rand.intRangeLessThan(u32, 0, 10);
+        const y1 = self.rand.intRangeLessThan(u32, 0, 10);
+        const z1 = self.rand.intRangeLessThan(u32, 0, 10);
+
+        const x2 = self.rand.intRangeLessThan(u32, 0, 10);
+        const y2 = self.rand.intRangeLessThan(u32, 0, 10);
+        const z2 = self.rand.intRangeLessThan(u32, 0, 10);
+
+        self.position_p1 = Position.create(x1, y1, z1);
+        self.position_p2 = Position.create(x2, y2, z2);
+
+        self.player1.?.begin(self.position_p1.?, self.position_p2.?);
+        self.player1.?.begin(self.position_p2.?, self.position_p1.?);
+
+        // init boards with rand values 
+
+        // initialize the targets
+        
+        // init nb_reward
+
+        self.started = true;
+    }
+
+    pub fn play(self: *Self) void {
+        assert(self.started);
     }
 };
 
@@ -99,8 +144,45 @@ pub const Player = struct {
     }
 };
 
-pub const Position = struct { x: u32, y: u32, z: u32 };
-pub const Action = struct { dx: u32, dy: u32, dz: u32 };
+pub const Position = struct {
+    x: u32,
+    y: u32,
+    z: u32,
+    pub fn create(x: u32, y: u32, z: u32) Position {
+        assert(x >= 0 and x < 10);
+        assert(y >= 0 and y < 10);
+        assert(z >= 0 and z < 10);
+
+        return Position{
+            .x = x,
+            .y = y,
+            .z = z,
+        };
+    }
+
+    pub fn equals(self: *const Position, other: *const Position) bool {
+        return self.x == other.x and
+            self.y == other.y and
+            self.z == other.z;
+    }
+};
+
+pub const Action = struct {
+    dx: i32,
+    dy: i32,
+    dz: i32,
+    pub fn create(dx: i32, dy: i32, dz: i32) Action {
+        assert(@abs(dx) < 2);
+        assert(@abs(dy) < 2);
+        assert(@abs(dz) < 2);
+
+        return Action{
+            .dx = dx,
+            .dy = dy,
+            .dz = dz,
+        };
+    }
+};
 
 pub const State = struct {
     current_position: Position,
@@ -110,36 +192,48 @@ pub const State = struct {
 
 pub const DummyPlayer = struct {
     const Self = @This();
-    position1: Position,
-    position2: Position,
+    position1: ?Position,
+    position2: ?Position,
+
+    rand: Random,
+
+    pub fn init(random: Random) Self {
+        return Self{
+            .rand = random,
+            .position1 = null,
+            .position2 = null,
+        };
+    }
 
     pub fn begin(ctx: *anyopaque, pos1: Position, pos2: Position) void {
         const self: *Self = @ptrCast(@alignCast(ctx));
 
         self.position1 = pos1;
         self.position2 = pos2;
-        print("position 1: {}\nPosition 2: {}\n", .{ pos1, pos2 });
+        // print("position 1: {}\nPosition 2: {}\n", .{ pos1, pos2 });
     }
 
     pub fn get_action(ctx: *anyopaque, state: *State) Action {
         const self: *Self = @ptrCast(@alignCast(ctx));
-        _ = self;
         print("State is {}\n", .{state});
-        return Action{ .dx = 0, .dy = 0, .dz = 0 };
+        const dx = self.rand.intRangeAtMost(i32, -1, 1);
+        const dy = self.rand.intRangeAtMost(i32, -1, 1);
+        const dz = self.rand.intRangeAtMost(i32, -1, 1);
+        return Action.create(dx, dy, dz);
     }
 
     pub fn other_player_action(ctx: *anyopaque, action: Action) void {
         const self: *Self = @ptrCast(@alignCast(ctx));
         _ = self;
-
-        print("Other player action is {}\n", .{action});
+        _ = action;
+        // print("Other player action is {}\n", .{action});
     }
 
     pub fn reward(ctx: *anyopaque, value: i32) void {
         const self: *Self = @ptrCast(@alignCast(ctx));
         _ = self;
-
-        print("Reward is {}\n", .{value});
+        _ = value;
+        // print("Reward is {}\n", .{value});
     }
 
     pub fn player(self: *Self) Player {
