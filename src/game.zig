@@ -41,7 +41,7 @@ pub const Environnement = struct {
     // }
     const Self = @This();
     const LENGTH = 10;
-    const TargetsMap = std.AutoHashMap(Position, i32);
+    const TargetsMap = std.AutoHashMap(Position, u32);
     board: [LENGTH][LENGTH][LENGTH]u32,
     targets: TargetsMap,
     nb_rewards: ?u32,
@@ -92,7 +92,7 @@ pub const Environnement = struct {
         self.player2 = player;
     }
 
-    pub fn start(self: *Environnement) void {
+    pub fn start(self: *Environnement) !void {
         assert(self.player1 != null);
         assert(self.player2 != null);
 
@@ -112,17 +112,53 @@ pub const Environnement = struct {
         self.player1.?.begin(self.position_p1.?, self.position_p2.?);
         self.player1.?.begin(self.position_p2.?, self.position_p1.?);
 
-        // init boards with rand values 
+        // init boards with rand values
+        var nb_rewards: u32 = 0;
+        for (0..LENGTH) |i| {
+            for (0..LENGTH) |j| {
+                for (0..LENGTH) |k| {
+                    if (self.rand.float(f32) < 0.15) {
+                        const target = self.rand.intRangeAtMost(u32, 1, 15);
+                        self.board[i][j][k] = target;
+
+                        const position = Position.create(
+                            @intCast(i),
+                            @intCast(j),
+                            @intCast(k),
+                        );
+                        try self.targets.put(position, target);
+                        nb_rewards += 1;
+                    }
+                }
+            }
+        }
+        // init nb_reward
+        self.nb_rewards = nb_rewards;
 
         // initialize the targets
-        
-        // init nb_reward
+        var target_iterator = self.targets.iterator();
+        while (target_iterator.next()) |item| {
+            const key_ptr = item.key_ptr;
+            const value_ptr = item.value_ptr;
+
+            print("{} -> {}\n", .{key_ptr.*, value_ptr.*});
+        }
 
         self.started = true;
     }
 
+    pub fn deinit(self: *Environnement) void {
+        self.targets.deinit();
+    }
+
     pub fn play(self: *Self) void {
         assert(self.started);
+
+        // const player1 = self.player1.?;
+        // const player2 = self.player2.?;
+
+        // create state for this player
+        // player1.get_action(state);
     }
 };
 
@@ -134,13 +170,25 @@ pub const Player = struct {
 
     pub const VTable = struct {
         begin: *const fn (*anyopaque, position1: Position, position2: Position) void,
-        get_action: *const fn (*anyopaque, state: *State) Action,
+        get_action: *const fn (*anyopaque, state: *const State) Action,
         other_player_action: *const fn (*anyopaque, action: Action) void,
         reward: *const fn (*anyopaque, reward: i32) void,
     };
 
     pub fn begin(self: Player, position1: Position, position2: Position) void {
         self.vtable.begin(self.ptr, position1, position2);
+    }
+
+    pub fn get_action(self: Player, state: *const State) Action {
+        return self.vtable.get_action(self.ptr, state);
+    }
+
+    pub fn other_player_action(self: Player, action: Action) void {
+        self.vtable.other_player_action(self.ptr, action);
+    }
+
+    pub fn reward(self: Player, _reward: i32) void {
+        self.vtable.reward(self.ptr, _reward);
     }
 };
 
@@ -207,9 +255,9 @@ pub const DummyPlayer = struct {
         // print("position 1: {}\nPosition 2: {}\n", .{ pos1, pos2 });
     }
 
-    pub fn get_action(ctx: *anyopaque, state: *State) Action {
+    pub fn get_action(ctx: *anyopaque, state: *const State) Action {
         const self: *Self = @ptrCast(@alignCast(ctx));
-        print("State is {}\n", .{state});
+        _ = state;
         const dx = self.rand.intRangeAtMost(i32, -1, 1);
         const dy = self.rand.intRangeAtMost(i32, -1, 1);
         const dz = self.rand.intRangeAtMost(i32, -1, 1);
