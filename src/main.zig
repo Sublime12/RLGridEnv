@@ -27,6 +27,6 @@ test "initialize game" {
     env.setPlayer2(player2);
     env.start();
 
-    assert(env.position_p1.?.equals(&Position.create(2, 7, 9)));
-    assert(env.position_p2.?.equals(&Position.create(2, 6, 3)));
+    assert(std.meta.eql(env.position_p1, Position.create(2, 7, 9)));
+    assert(std.meta.eql(env.position_p2, Position.create(2, 6, 3)));
 }

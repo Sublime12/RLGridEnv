@@ -159,12 +159,6 @@ pub const Position = struct {
             .z = z,
         };
     }
-
-    pub fn equals(self: *const Position, other: *const Position) bool {
-        return self.x == other.x and
-            self.y == other.y and
-            self.z == other.z;
-    }
 };
 
 pub const Action = struct {
