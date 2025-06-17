@@ -23,9 +23,12 @@ test "initialize game" {
     const player2 = dummy_player2.player();
 
     var env = Environnement.init(allocator, rand, 0);
+    defer env.deinit();
     env.setPlayer1(player1);
     env.setPlayer2(player2);
-    env.start();
+    try env.start();
+
+    env.play();
 
     assert(std.meta.eql(env.position_p1, Position.create(2, 7, 9)));
     assert(std.meta.eql(env.position_p2, Position.create(2, 6, 3)));

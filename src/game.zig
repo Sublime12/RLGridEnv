@@ -5,6 +5,7 @@ const Random = std.Random;
 const math = std.math;
 const assert = std.debug.assert;
 
+const LENGTH = 10;
 pub const Environnement = struct {
     // player one
     // player two
@@ -39,19 +40,25 @@ pub const Environnement = struct {
     //   set_player2(Player)
     //   undo_move()
     // }
+    const Turn = enum { first, second };
     const Self = @This();
-    const LENGTH = 10;
     const TargetsMap = std.AutoHashMap(Position, u32);
+
     board: [LENGTH][LENGTH][LENGTH]u32,
     targets: TargetsMap,
     nb_rewards: ?u32,
     player1: ?Player,
     player2: ?Player,
-    position_p1: ?Position,
-    position_p2: ?Position,
+    position_p1: Position,
+    position_p2: Position,
     reward_player1: i32,
     reward_player2: i32,
     started: bool,
+    playerTurn: Turn,
+    last_action_p1: ?Action,
+    last_action_p2: ?Action,
+    adversary_last_reward_p1: ?i32,
+    adversary_last_reward_p2: ?i32,
 
     rand: Random,
 
@@ -65,13 +72,18 @@ pub const Environnement = struct {
             .targets = TargetsMap.init(allocator),
             .player1 = null,
             .player2 = null,
-            .position_p1 = null,
-            .position_p2 = null,
+            .position_p1 = undefined,
+            .position_p2 = undefined,
             .reward_player1 = 0,
             .reward_player2 = 0,
             .nb_rewards = null,
             .started = false,
             .rand = rand,
+            .playerTurn = Turn.first,
+            .last_action_p1 = null,
+            .last_action_p2 = null,
+            .adversary_last_reward_p1 = null,
+            .adversary_last_reward_p2 = null,
         };
 
         for (0..LENGTH) |i| {
@@ -98,19 +110,19 @@ pub const Environnement = struct {
 
         // initialize position players 1 and 2
 
-        const x1 = self.rand.intRangeLessThan(u32, 0, 10);
-        const y1 = self.rand.intRangeLessThan(u32, 0, 10);
-        const z1 = self.rand.intRangeLessThan(u32, 0, 10);
+        const x1 = self.rand.intRangeLessThan(i32, 0, 10);
+        const y1 = self.rand.intRangeLessThan(i32, 0, 10);
+        const z1 = self.rand.intRangeLessThan(i32, 0, 10);
 
-        const x2 = self.rand.intRangeLessThan(u32, 0, 10);
-        const y2 = self.rand.intRangeLessThan(u32, 0, 10);
-        const z2 = self.rand.intRangeLessThan(u32, 0, 10);
+        const x2 = self.rand.intRangeLessThan(i32, 0, 10);
+        const y2 = self.rand.intRangeLessThan(i32, 0, 10);
+        const z2 = self.rand.intRangeLessThan(i32, 0, 10);
 
         self.position_p1 = Position.create(x1, y1, z1);
         self.position_p2 = Position.create(x2, y2, z2);
 
-        self.player1.?.begin(self.position_p1.?, self.position_p2.?);
-        self.player1.?.begin(self.position_p2.?, self.position_p1.?);
+        self.player1.?.begin(self.position_p1, self.position_p2);
+        self.player1.?.begin(self.position_p2, self.position_p1);
 
         // init boards with rand values
         var nb_rewards: u32 = 0;
@@ -141,7 +153,7 @@ pub const Environnement = struct {
             const key_ptr = item.key_ptr;
             const value_ptr = item.value_ptr;
 
-            print("{} -> {}\n", .{key_ptr.*, value_ptr.*});
+            print("{} -> {}\n", .{ key_ptr.*, value_ptr.* });
         }
 
         self.started = true;
@@ -154,10 +166,50 @@ pub const Environnement = struct {
     pub fn play(self: *Self) void {
         assert(self.started);
 
-        // const player1 = self.player1.?;
-        // const player2 = self.player2.?;
+        const player1 = self.player1.?;
+        const player2 = self.player2.?;
 
+        const player: Player = if (self.playerTurn == Turn.first)
+            player1
+        else
+            player2;
+
+        const current_position = if (self.playerTurn == Turn.first)
+            self.position_p1
+        else
+            self.position_p2;
+
+        const adversary_last_action = if (self.playerTurn == Turn.first)
+            self.last_action_p1
+        else
+            self.last_action_p2;
+
+        const adversary_last_reward = if (self.playerTurn == Turn.first)
+            self.adversary_last_reward_p1
+        else
+            self.adversary_last_reward_p2;
+
+        const state = State{
+            .current_position = current_position,
+            .adversary_last_action = adversary_last_action,
+            .adversary_reward = adversary_last_reward,
+        };
+
+        // _ = state;
+        // _ = player;
+
+        const action = player.getAction(&state);
+        const temp_new_position = current_position.moveBy(action);
+        _ = temp_new_position;
+
+        // check if there is a conflict 
+        // if so reward is -1
+        // else check reward at that case?
+        // reward is that reward, remove that reward
+        // if (self.playerTurn == )
+        // const
         // create state for this player
+        // const state = State
         // player1.get_action(state);
     }
 };
@@ -179,11 +231,11 @@ pub const Player = struct {
         self.vtable.begin(self.ptr, position1, position2);
     }
 
-    pub fn get_action(self: Player, state: *const State) Action {
+    pub fn getAction(self: Player, state: *const State) Action {
         return self.vtable.get_action(self.ptr, state);
     }
 
-    pub fn other_player_action(self: Player, action: Action) void {
+    pub fn otherPlayerAction(self: Player, action: Action) void {
         self.vtable.other_player_action(self.ptr, action);
     }
 
@@ -193,10 +245,10 @@ pub const Player = struct {
 };
 
 pub const Position = struct {
-    x: u32,
-    y: u32,
-    z: u32,
-    pub fn create(x: u32, y: u32, z: u32) Position {
+    x: i32,
+    y: i32,
+    z: i32,
+    pub fn create(x: i32, y: i32, z: i32) Position {
         assert(x >= 0 and x < 10);
         assert(y >= 0 and y < 10);
         assert(z >= 0 and z < 10);
@@ -206,6 +258,17 @@ pub const Position = struct {
             .y = y,
             .z = z,
         };
+    }
+
+    pub fn moveBy(self: Position, action: Action) Position {
+        const new_x = math.clamp(self.x + action.dx, 0, LENGTH - 1);
+        const new_y = math.clamp(self.y + action.dy, 0, LENGTH - 1);
+        const new_z = math.clamp(self.z + action.dz, 0, LENGTH - 1);
+        return Position.create(
+            new_x,
+            new_y,
+            new_z,
+        );
     }
 };
 
@@ -228,8 +291,8 @@ pub const Action = struct {
 
 pub const State = struct {
     current_position: Position,
-    adversary_last_action: Action,
-    adversary_reward: i32,
+    adversary_last_action: ?Action,
+    adversary_reward: ?i32,
 };
 
 pub const DummyPlayer = struct {
@@ -255,7 +318,7 @@ pub const DummyPlayer = struct {
         // print("position 1: {}\nPosition 2: {}\n", .{ pos1, pos2 });
     }
 
-    pub fn get_action(ctx: *anyopaque, state: *const State) Action {
+    pub fn getAction(ctx: *anyopaque, state: *const State) Action {
         const self: *Self = @ptrCast(@alignCast(ctx));
         _ = state;
         const dx = self.rand.intRangeAtMost(i32, -1, 1);
@@ -264,7 +327,7 @@ pub const DummyPlayer = struct {
         return Action.create(dx, dy, dz);
     }
 
-    pub fn other_player_action(ctx: *anyopaque, action: Action) void {
+    pub fn otherPlayerAction(ctx: *anyopaque, action: Action) void {
         const self: *Self = @ptrCast(@alignCast(ctx));
         _ = self;
         _ = action;
@@ -283,8 +346,8 @@ pub const DummyPlayer = struct {
             .ptr = self,
             .vtable = &.{
                 .begin = Self.begin,
-                .get_action = Self.get_action,
-                .other_player_action = Self.other_player_action,
+                .get_action = Self.getAction,
+                .other_player_action = Self.otherPlayerAction,
                 .reward = Self.reward,
             },
         };
