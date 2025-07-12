@@ -42,7 +42,7 @@ pub const Environnement = struct {
     // }
     const Turn = enum { first, second };
     const Self = @This();
-    const TargetsMap = std.AutoHashMap(Position, u32);
+    const TargetsMap = std.AutoHashMap(Position, i32);
 
     board: [LENGTH][LENGTH][LENGTH]u32,
     targets: TargetsMap,
@@ -130,8 +130,8 @@ pub const Environnement = struct {
             for (0..LENGTH) |j| {
                 for (0..LENGTH) |k| {
                     if (self.rand.float(f32) < 0.15) {
-                        const target = self.rand.intRangeAtMost(u32, 1, 15);
-                        self.board[i][j][k] = target;
+                        const target = self.rand.intRangeAtMost(i32, 1, 15);
+                        self.board[i][j][k] = @intCast(target);
 
                         const position = Position.create(
                             @intCast(i),
@@ -163,21 +163,29 @@ pub const Environnement = struct {
         self.targets.deinit();
     }
 
-    pub fn play(self: *Self) void {
+    pub fn play(self: *Self) i32 {
         assert(self.started);
 
-        const player1 = self.player1.?;
-        const player2 = self.player2.?;
+        const player1 = &self.player1.?;
+        const player2 = &self.player2.?;
 
-        const player: Player = if (self.playerTurn == Turn.first)
+        const player = if (self.playerTurn == Turn.first)
             player1
         else
             player2;
+        const other_player = if (self.playerTurn == Turn.first)
+            player2
+        else
+            player1;
 
         const current_position = if (self.playerTurn == Turn.first)
             self.position_p1
         else
             self.position_p2;
+        const other_position = if (self.playerTurn == Turn.first)
+            self.position_p2
+        else
+            self.position_p1;
 
         const adversary_last_action = if (self.playerTurn == Turn.first)
             self.last_action_p1
@@ -198,11 +206,31 @@ pub const Environnement = struct {
         // _ = state;
         // _ = player;
 
-        const action = player.getAction(&state);
-        const temp_new_position = current_position.moveBy(action);
-        _ = temp_new_position;
+        const action = player.getAction(&state, self);
+        var temp_new_position = current_position.moveBy(action);
+        // _ = temp_new_position;
 
-        // check if there is a conflict 
+        var reward: i32 = -1;
+        // Conflict
+        if (std.meta.eql(temp_new_position, other_position)) {
+            temp_new_position = current_position.moveBy(action.negate());
+            return reward;
+        }
+        if (self.targets.get(temp_new_position)) |rew| {
+            reward = rew;
+            self.nb_rewards.? -= 1;
+        } else {
+            reward = 0;
+        }
+        other_player.otherPlayerAction(action);
+
+        self.playerTurn = if (self.playerTurn == Turn.first)
+            Turn.second
+        else
+            Turn.first;
+
+        return reward;
+        // check if there is a conflict
         // if so reward is -1
         // else check reward at that case?
         // reward is that reward, remove that reward
@@ -222,7 +250,7 @@ pub const Player = struct {
 
     pub const VTable = struct {
         begin: *const fn (*anyopaque, position1: Position, position2: Position) void,
-        get_action: *const fn (*anyopaque, state: *const State) Action,
+        get_action: *const fn (*anyopaque, state: *const State, env: *Environnement) Action,
         other_player_action: *const fn (*anyopaque, action: Action) void,
         reward: *const fn (*anyopaque, reward: i32) void,
     };
@@ -231,8 +259,8 @@ pub const Player = struct {
         self.vtable.begin(self.ptr, position1, position2);
     }
 
-    pub fn getAction(self: Player, state: *const State) Action {
-        return self.vtable.get_action(self.ptr, state);
+    pub fn getAction(self: Player, state: *const State, env: *Environnement) Action {
+        return self.vtable.get_action(self.ptr, state, env);
     }
 
     pub fn otherPlayerAction(self: Player, action: Action) void {
@@ -287,6 +315,10 @@ pub const Action = struct {
             .dz = dz,
         };
     }
+
+    pub fn negate(self: *const Action) Action {
+        return Action.create(-self.dx, -self.dy, -self.dz);
+    }
 };
 
 pub const State = struct {
@@ -318,9 +350,11 @@ pub const DummyPlayer = struct {
         // print("position 1: {}\nPosition 2: {}\n", .{ pos1, pos2 });
     }
 
-    pub fn getAction(ctx: *anyopaque, state: *const State) Action {
+    pub fn getAction(ctx: *anyopaque, state: *const State, env: *Environnement) Action {
         const self: *Self = @ptrCast(@alignCast(ctx));
         _ = state;
+        _ = env;
+        // _ = undo_fn;
         const dx = self.rand.intRangeAtMost(i32, -1, 1);
         const dy = self.rand.intRangeAtMost(i32, -1, 1);
         const dz = self.rand.intRangeAtMost(i32, -1, 1);
@@ -344,7 +378,7 @@ pub const DummyPlayer = struct {
     pub fn player(self: *Self) Player {
         return Player{
             .ptr = self,
-            .vtable = &.{
+            .vtable = &Player.VTable{
                 .begin = Self.begin,
                 .get_action = Self.getAction,
                 .other_player_action = Self.otherPlayerAction,
