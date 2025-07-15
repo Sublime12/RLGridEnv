@@ -163,73 +163,7 @@ pub const Environnement = struct {
         self.targets.deinit();
     }
 
-    pub fn play(self: *Self) i32 {
-        assert(self.started);
-
-        const player1 = &self.player1.?;
-        const player2 = &self.player2.?;
-
-        const player = if (self.playerTurn == Turn.first)
-            player1
-        else
-            player2;
-        const other_player = if (self.playerTurn == Turn.first)
-            player2
-        else
-            player1;
-
-        const current_position = if (self.playerTurn == Turn.first)
-            self.position_p1
-        else
-            self.position_p2;
-        const other_position = if (self.playerTurn == Turn.first)
-            self.position_p2
-        else
-            self.position_p1;
-
-        const adversary_last_action = if (self.playerTurn == Turn.first)
-            self.last_action_p1
-        else
-            self.last_action_p2;
-
-        const adversary_last_reward = if (self.playerTurn == Turn.first)
-            self.adversary_last_reward_p1
-        else
-            self.adversary_last_reward_p2;
-
-        const state = State{
-            .current_position = current_position,
-            .adversary_last_action = adversary_last_action,
-            .adversary_reward = adversary_last_reward,
-        };
-
-        // _ = state;
-        // _ = player;
-
-        const action = player.getAction(&state, self);
-        var temp_new_position = current_position.moveBy(action);
-        // _ = temp_new_position;
-
-        var reward: i32 = -1;
-        // Conflict
-        if (std.meta.eql(temp_new_position, other_position)) {
-            temp_new_position = current_position.moveBy(action.negate());
-            return reward;
-        }
-        if (self.targets.get(temp_new_position)) |rew| {
-            reward = rew;
-            self.nb_rewards.? -= 1;
-        } else {
-            reward = 0;
-        }
-        other_player.otherPlayerAction(action);
-
-        self.playerTurn = if (self.playerTurn == Turn.first)
-            Turn.second
-        else
-            Turn.first;
-
-        return reward;
+    pub fn play(self: *Self) void {
         // check if there is a conflict
         // if so reward is -1
         // else check reward at that case?
@@ -239,6 +173,99 @@ pub const Environnement = struct {
         // create state for this player
         // const state = State
         // player1.get_action(state);
+        while (true) {
+            const adversary_last_action = if (self.playerTurn == Turn.first)
+                self.last_action_p1
+            else
+                self.last_action_p2;
+
+            const adversary_last_reward = if (self.playerTurn == Turn.first)
+                self.adversary_last_reward_p1
+            else
+                self.adversary_last_reward_p2;
+
+            const current_position = if (self.playerTurn == Turn.first)
+                self.position_p1
+            else
+                self.position_p2;
+
+            const player1 = &self.player1.?;
+            const player2 = &self.player2.?;
+
+            const player = if (self.playerTurn == Turn.first)
+                player1
+            else
+                player2;
+
+            const other_player = if (self.playerTurn == Turn.first)
+                player2
+            else
+                player1;
+
+
+            const state = State{
+                .current_position = current_position,
+                .adversary_last_action = adversary_last_action,
+                .adversary_reward = adversary_last_reward,
+            };
+            const action = player.getAction(&state, self);
+            const result = self.playStep(action);
+            other_player.otherPlayerAction(action);
+            
+            if (result.ended) {
+                break;
+            }
+        }
+
+    }
+
+    const PlayResult = struct {
+        reward: i32,
+        ended: bool,
+    };
+
+    pub fn playStep(self: *Self, action: Action) PlayResult {
+        assert(self.started);
+
+        const current_position = if (self.playerTurn == Turn.first)
+            &self.position_p1
+        else
+            &self.position_p2;
+        const other_position = if (self.playerTurn == Turn.first)
+            &self.position_p2
+        else
+            &self.position_p1;
+
+        var temp_new_position = current_position.moveBy(action);
+
+        var reward: ?i32 = null;
+
+        // Conflict
+        if (std.meta.eql(temp_new_position, other_position.*)) {
+            temp_new_position = current_position.moveBy(action.negate());
+            reward = -1;
+        }
+        if (self.targets.get(temp_new_position)) |rew| {
+            reward = rew;
+            self.nb_rewards.? -= 1;
+        } else {
+            reward = 0;
+        }
+
+        current_position.update(&temp_new_position);
+        // other_player.otherPlayerAction(action);
+
+        self.playerTurn = if (self.playerTurn == Turn.first)
+            Turn.second
+        else
+            Turn.first;
+
+        const game_ended = self.nb_rewards == 0;
+        assert(reward != null);
+        return .{
+            .reward = reward.?,
+            .ended = game_ended,
+        };
     }
 };
 
@@ -288,7 +315,7 @@ pub const Position = struct {
         };
     }
 
-    pub fn moveBy(self: Position, action: Action) Position {
+    pub fn moveBy(self: *Position, action: Action) Position {
         const new_x = math.clamp(self.x + action.dx, 0, LENGTH - 1);
         const new_y = math.clamp(self.y + action.dy, 0, LENGTH - 1);
         const new_z = math.clamp(self.z + action.dz, 0, LENGTH - 1);
@@ -297,6 +324,12 @@ pub const Position = struct {
             new_y,
             new_z,
         );
+    }
+
+    pub fn update(self: *Position, other_position: *const Position) void {
+        self.x = other_position.x;
+        self.y = other_position.y;
+        self.z = other_position.z;
     }
 };
 
