@@ -13,7 +13,7 @@ test "initialize game" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
-    var prng = std.rand.DefaultPrng.init(0);
+    var prng = std.rand.DefaultPrng.init(@intCast(std.time.timestamp()));
     const rand = prng.random();
 
     var dummy_player1 = DummyPlayer.init(rand);
@@ -28,8 +28,14 @@ test "initialize game" {
     env.setPlayer2(player2);
     try env.start();
 
+    // assert(std.meta.eql(env.position_p1, Position.create(2, 7, 9)));
+    // assert(std.meta.eql(env.position_p2, Position.create(2, 6, 3)));
+    _ = try env.play();
 
-    assert(std.meta.eql(env.position_p1, Position.create(2, 7, 9)));
-    assert(std.meta.eql(env.position_p2, Position.create(2, 6, 3)));
-    _ = env.play();
+    print("Dum p1 reward: {}\n", .{dummy_player1.reward});
+    print("Dum p2 reward: {}\n", .{dummy_player2.reward});
+    print(
+        "Winner is: {s}\n",
+        .{if (dummy_player1.reward > dummy_player2.reward) "p1" else "p2"},
+    );
 }

@@ -43,9 +43,16 @@ pub const Environnement = struct {
     const Turn = enum { first, second };
     const Self = @This();
     const TargetsMap = std.AutoHashMap(Position, i32);
+    const Played = struct {
+        action: Action,
+        reward: i32,
+        has_reward: bool,
+    };
+    const GameHistory = std.ArrayList(Played);
 
     board: [LENGTH][LENGTH][LENGTH]u32,
     targets: TargetsMap,
+    game_history: GameHistory,
     nb_rewards: ?u32,
     player1: ?Player,
     player2: ?Player,
@@ -70,6 +77,7 @@ pub const Environnement = struct {
         var env = Self{
             .board = undefined,
             .targets = TargetsMap.init(allocator),
+            .game_history = GameHistory.init(allocator),
             .player1 = null,
             .player2 = null,
             .position_p1 = undefined,
@@ -161,9 +169,10 @@ pub const Environnement = struct {
 
     pub fn deinit(self: *Environnement) void {
         self.targets.deinit();
+        self.game_history.deinit();
     }
 
-    pub fn play(self: *Self) void {
+    pub fn play(self: *Self) !void {
         // check if there is a conflict
         // if so reward is -1
         // else check reward at that case?
@@ -173,7 +182,9 @@ pub const Environnement = struct {
         // create state for this player
         // const state = State
         // player1.get_action(state);
+        var i: i32 = 0;
         while (true) {
+            defer i += 1;
             const adversary_last_action = if (self.playerTurn == Turn.first)
                 self.last_action_p1
             else
@@ -202,21 +213,22 @@ pub const Environnement = struct {
             else
                 player1;
 
-
             const state = State{
                 .current_position = current_position,
                 .adversary_last_action = adversary_last_action,
                 .adversary_reward = adversary_last_reward,
             };
             const action = player.getAction(&state, self);
-            const result = self.playStep(action);
+            const result = try self.playStep(action);
+
+            player.reward(result.reward);
             other_player.otherPlayerAction(action);
-            
             if (result.ended) {
                 break;
             }
         }
 
+        print("Nb iterations: {}\n", .{i});
     }
 
     const PlayResult = struct {
@@ -224,7 +236,7 @@ pub const Environnement = struct {
         ended: bool,
     };
 
-    pub fn playStep(self: *Self, action: Action) PlayResult {
+    pub fn playStep(self: *Self, action: Action) !PlayResult {
         assert(self.started);
 
         const current_position = if (self.playerTurn == Turn.first)
@@ -240,14 +252,21 @@ pub const Environnement = struct {
 
         var reward: ?i32 = null;
 
+        var effective_action = action;
+        var has_reward = false;
         // Conflict
         if (std.meta.eql(temp_new_position, other_position.*)) {
-            temp_new_position = current_position.moveBy(action.negate());
+            const conflicted_action = action.negate();
+            effective_action = conflicted_action;
+            temp_new_position = current_position.moveBy(conflicted_action);
             reward = -1;
         }
         if (self.targets.get(temp_new_position)) |rew| {
+            defer _ = self.targets.remove(temp_new_position);
             reward = rew;
             self.nb_rewards.? -= 1;
+            has_reward = true;
+            print("Player {} turn won: {}\n", .{ self.playerTurn, rew });
         } else {
             reward = 0;
         }
@@ -262,10 +281,38 @@ pub const Environnement = struct {
 
         const game_ended = self.nb_rewards == 0;
         assert(reward != null);
+
+        try self.game_history.append(.{
+            .reward = reward.?,
+            .action = effective_action,
+            .has_reward = has_reward,
+        });
         return .{
             .reward = reward.?,
             .ended = game_ended,
         };
+    }
+
+    pub fn undo(self: *Self) void {
+        if (self.game_history.popOrNull()) |history| {
+            const position = if (self.playerTurn == Turn.first)
+                &self.position_p1
+            else
+                &self.position_p2;
+
+            if (history.has_reward) {
+                self.targets.putNoClobber(position, history.reward);
+                self.nb_rewards += 1;
+            }
+            position.x -= history.action.dx;
+            position.y -= history.action.dy;
+            position.z -= history.action.dz;
+
+            self.playerTurn = if (self.playerTurn == Turn.first)
+                Turn.second
+            else
+                Turn.first;
+        }
     }
 };
 
@@ -364,6 +411,7 @@ pub const DummyPlayer = struct {
     const Self = @This();
     position1: ?Position,
     position2: ?Position,
+    reward: i32,
 
     rand: Random,
 
@@ -372,6 +420,7 @@ pub const DummyPlayer = struct {
             .rand = random,
             .position1 = null,
             .position2 = null,
+            .reward = 0,
         };
     }
 
@@ -388,10 +437,13 @@ pub const DummyPlayer = struct {
         _ = state;
         _ = env;
         // _ = undo_fn;
+
         const dx = self.rand.intRangeAtMost(i32, -1, 1);
         const dy = self.rand.intRangeAtMost(i32, -1, 1);
         const dz = self.rand.intRangeAtMost(i32, -1, 1);
-        return Action.create(dx, dy, dz);
+        const action = Action.create(dx, dy, dz);
+        // print("Playing action {}\n", .{ action });
+        return action;
     }
 
     pub fn otherPlayerAction(ctx: *anyopaque, action: Action) void {
@@ -403,8 +455,7 @@ pub const DummyPlayer = struct {
 
     pub fn reward(ctx: *anyopaque, value: i32) void {
         const self: *Self = @ptrCast(@alignCast(ctx));
-        _ = self;
-        _ = value;
+        self.reward += value;
         // print("Reward is {}\n", .{value});
     }
 
