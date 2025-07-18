@@ -155,15 +155,6 @@ pub const Environnement = struct {
         // init nb_reward
         self.nb_rewards = nb_rewards;
 
-        // initialize the targets
-        var target_iterator = self.targets.iterator();
-        while (target_iterator.next()) |item| {
-            const key_ptr = item.key_ptr;
-            const value_ptr = item.value_ptr;
-
-            print("{} -> {}\n", .{ key_ptr.*, value_ptr.* });
-        }
-
         self.started = true;
     }
 
@@ -173,18 +164,9 @@ pub const Environnement = struct {
     }
 
     pub fn play(self: *Self) !void {
-        // check if there is a conflict
-        // if so reward is -1
-        // else check reward at that case?
-        // reward is that reward, remove that reward
-        // if (self.playerTurn == )
-        // const
-        // create state for this player
-        // const state = State
-        // player1.get_action(state);
-        var i: i32 = 0;
+        // var i: i32 = 0;
         while (true) {
-            defer i += 1;
+            // defer i += 1;
             const adversary_last_action = if (self.playerTurn == Turn.first)
                 self.last_action_p1
             else
@@ -228,7 +210,7 @@ pub const Environnement = struct {
             }
         }
 
-        print("Nb iterations: {}\n", .{i});
+        // print("Nb iterations: {}\n", .{i});
     }
 
     const PlayResult = struct {
@@ -293,25 +275,28 @@ pub const Environnement = struct {
         };
     }
 
-    pub fn undo(self: *Self) void {
+    // Do not call this function if game_history is empty
+    // Generally that means your algo is not correct
+    pub fn undo(self: *Self) !void {
         if (self.game_history.popOrNull()) |history| {
+            self.playerTurn = if (self.playerTurn == Turn.first)
+                Turn.second
+            else
+                Turn.first;
             const position = if (self.playerTurn == Turn.first)
                 &self.position_p1
             else
                 &self.position_p2;
 
             if (history.has_reward) {
-                self.targets.putNoClobber(position, history.reward);
-                self.nb_rewards += 1;
+                try self.targets.putNoClobber(position.*, history.reward);
+                self.nb_rewards.? += 1;
             }
             position.x -= history.action.dx;
             position.y -= history.action.dy;
             position.z -= history.action.dz;
-
-            self.playerTurn = if (self.playerTurn == Turn.first)
-                Turn.second
-            else
-                Turn.first;
+        } else {
+            unreachable;
         }
     }
 };
@@ -436,7 +421,6 @@ pub const DummyPlayer = struct {
         const self: *Self = @ptrCast(@alignCast(ctx));
         _ = state;
         _ = env;
-        // _ = undo_fn;
 
         const dx = self.rand.intRangeAtMost(i32, -1, 1);
         const dy = self.rand.intRangeAtMost(i32, -1, 1);
@@ -471,3 +455,42 @@ pub const DummyPlayer = struct {
         };
     }
 };
+
+test "undo should revert the game state to previous move" {
+    const allocator = std.testing.allocator;
+
+    // Fixed seed for reproducibility
+    var prng = std.rand.DefaultPrng.init(0);
+    const rand = prng.random();
+
+    var env = Environnement.init(allocator, rand, 0);
+    defer env.deinit();
+
+    var dummy1 = DummyPlayer.init(rand);
+    var dummy2 = DummyPlayer.init(rand);
+
+    env.setPlayer1(dummy1.player());
+    env.setPlayer2(dummy2.player());
+
+    try env.start();
+
+    const original_position_p1 = env.position_p1;
+    const original_position_p2 = env.position_p2;
+    const original_nb_rewards = env.nb_rewards.?;
+
+    const action = Action.create(1, 0, 0);
+    _ = try env.playStep(action);
+
+    const updated_position = env.position_p1;
+
+    std.testing.expect(!std.meta.eql(updated_position, original_position_p1)) catch return error.TestFail;
+    try env.undo();
+
+    std.testing.expect(std.meta.eql(env.position_p1, original_position_p1)) catch return error.TestFail;
+
+    std.testing.expect(std.meta.eql(env.position_p2, original_position_p2)) catch return error.TestFail;
+
+    std.testing.expectEqual(env.nb_rewards.?, original_nb_rewards) catch return error.TestFail;
+
+    std.testing.expectEqual(env.playerTurn, Environnement.Turn.first) catch return error.TestFail;
+}
